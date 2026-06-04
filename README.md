@@ -135,6 +135,8 @@ npm run audit -- my_reddit_handle --provider openai --model gpt-4o-mini
 |------|---------|-------------|
 | [reddit-username] / --reddit | none | Reddit user to audit (accepts u/name) |
 | --hn <username> | none | Hacker News user to audit |
+| --github <username> | none | GitHub user to audit (uses public REST API; set `GITHUB_TOKEN` to raise rate limit) |
+| --so <id_or_url> | none | Stack Overflow user to audit (numeric user_id or profile URL) |
 | -n, --max <n> | 300 | Maximum items fetched per platform |
 | --max-chars <n> | 120000 | Maximum analysis transcript budget |
 | --concurrency <n> | all (≤8) | Number of chunk workers processed in parallel |

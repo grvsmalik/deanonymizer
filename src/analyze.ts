@@ -1,3 +1,4 @@
+import { extractEmails, extractSocialHandles } from "./extract.js";
 import type { LLMClient } from "./llm/index.js";
 import type { AuditResult, Finding, Item, Profile } from "./types.js";
 
@@ -504,6 +505,32 @@ ${SCHEMA_HINT}`;
         }
       : undefined;
 
+  // Deterministic identifier extraction. Runs over every item body plus the
+  // model's evidence quotes, so anything regex-detectable lands in the
+  // report even if the LLM glossed over it.
+  const corpusParts: string[] = [];
+  for (const it of allItems) if (it.body) corpusParts.push(it.body);
+  for (const f of parsed.findings ?? []) {
+    for (const e of f.evidence ?? []) if (e?.quote) corpusParts.push(e.quote);
+  }
+  const corpus = corpusParts.join("\n\n");
+  const emailList = extractEmails(corpus);
+  const handleList = extractSocialHandles(corpus);
+  // The audited account itself isn't a "discovered" handle — drop it so the
+  // section highlights only cross-platform / external accounts.
+  const auditedHandles = new Set(
+    platformProfiles.map((p) => `${p.platform}:${p.username.toLowerCase()}`),
+  );
+  const filteredHandles = handleList.filter((h) => {
+    const aliasPlatform =
+      h.platform === "hackernews" ? "hn" : h.platform; // map naming difference
+    return !auditedHandles.has(`${aliasPlatform}:${h.handle.toLowerCase()}`);
+  });
+  const directIdentifiers =
+    emailList.length > 0 || filteredHandles.length > 0
+      ? { emails: emailList, socialHandles: filteredHandles }
+      : undefined;
+
   opts.onProgress?.({
     phase: "done",
     percent: 100,
@@ -526,5 +553,6 @@ ${SCHEMA_HINT}`;
       publicProofUrls: [...knownProofUrls],
     },
     findings: parsed.findings ?? [],
+    directIdentifiers,
   };
 }
