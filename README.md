@@ -37,22 +37,50 @@ containing:
 1. Acquisition
    - Reddit artifacts from [Arctic Shift API](https://arctic-shift.photon-reddit.com)
    - Hacker News artifacts from [HN Algolia Search API](https://hn.algolia.com/api)
+   - GitHub profile fields + public events (commits, issues, PRs, review
+     comments) via the [GitHub REST API](https://docs.github.com/en/rest);
+     commit author name and email from `PushEvent` payloads are folded in
+     inline. Optional `GITHUB_TOKEN` raises the rate limit.
+   - Stack Overflow answers, questions, comments, and profile fields via
+     the [Stack Exchange API v2.3](https://api.stackexchange.com)
+   - Shallow link-follower for any external website declared in a GitHub
+     or Stack Overflow profile: fetches the root page, then up to 5
+     same-origin sub-paths prioritized by identity-shaped routes
+     (`/about`, `/cv`, `/resume`, `/contact`, `/bio`, `/me`,
+     `/portfolio`, …). Preserves `mailto:` and `http(s)://` href values
+     before HTML stripping so contact emails behind a link survive.
 2. Canonicalization
    - Heterogeneous source records mapped into a unified item schema
    - Temporal and textual normalization for bounded-context inference
 3. Feature extraction and attribution
-   - Detection of location, affiliation, temporal routine, self-disclosed
-     demographics, cross-platform handles, external URLs, and stylometric cues
-   - Attribution binding from claim to quote-level evidence and permalink
+   - LLM pass: detection of location, affiliation, temporal routine,
+     self-disclosed demographics, cross-platform handles, external URLs,
+     and stylometric cues, with attribution binding from each claim to
+     quote-level evidence and permalink
+   - Deterministic regex pass that runs in parallel and bypasses the
+     model: extracts emails (with `[at]` / `[dot]` obfuscation handling)
+     and cross-platform social handles for LinkedIn, Twitter/X, GitHub,
+     YouTube, Instagram, Bluesky, Reddit, Hacker News, Telegram, GitLab,
+     Stack Overflow, and Mastodon from URL patterns in the corpus.
+     False-positive paths like `twitter.com/home` are filtered and the
+     audited account itself is excluded.
 4. Risk synthesis
    - Confidence-calibrated findings: low, medium, high
    - Explicit exact-user section and public proof URL set
+   - Direct-identifier block (emails + discovered handles) rendered
+     before the LLM findings, so concrete leaks always appear regardless
+     of how the model chose to summarize them
    - Finding-level remediation recommendations
 
 ## Output properties
 
-- Human-readable report with ranked findings and rationale
-- JSON serialization for longitudinal tracking and downstream analytics
+- Human-readable report with ranked findings and rationale, grouped by
+  confidence (high → medium → low)
+- Dedicated `direct identifiers extracted` block surfacing emails and
+  cross-platform handles found by the deterministic regex pass
+- JSON serialization for longitudinal tracking and downstream analytics;
+  `AuditResult.directIdentifiers` exposes the raw email + social handle
+  hits alongside the model findings
 - Optional strict validation: fail if no external proof URL exists beyond
   audited platform profile endpoints
 
@@ -130,6 +158,19 @@ npm run audit -- my_reddit_handle --hn my_hn_handle
 # Hacker News only
 npm run audit -- --hn my_hn_handle
 
+# GitHub only (also follows the linked website + sub-pages)
+npm run audit -- --github my_gh_handle
+
+# Stack Overflow only (accepts numeric user_id or profile URL)
+npm run audit -- --so 1234567
+
+# All four platforms at once — cross-platform handle correlation is the
+# strongest signal the analyzer can flag
+npm run audit -- my_reddit_handle --hn my_hn_handle --github my_gh_handle --so 1234567
+
+# Audit through the Claude Code CLI (no API key needed)
+npm run audit -- my_reddit_handle --provider claude-code
+
 # JSON output
 npm run audit -- my_reddit_handle --json -o report.json
 
@@ -178,9 +219,27 @@ npm run audit -- my_reddit_handle --provider openai --model gpt-4o-mini
 npm run build
 ```
 
+## Continuous integration
+
+A GitHub Actions workflow at `.github/workflows/ci.yml` runs `npm run
+lint`, `npm run format:check`, `tsc --noEmit`, `npm test`, and `npm run
+build` on every push and pull request against `main`, across a Node 20 /
+22 / 24 matrix.
+
 ## Limitations
 
 - Findings are probabilistic and should not be interpreted as identity proof
 - Recall is upper-bounded by source completeness and truncation constraints
 - Stylometric separability is population- and domain-dependent
 - Confidence calibration depends on evidence density and artifact quality
+- GitHub's public events feed is capped at roughly 300 events from the
+  last 90 days, so commit author emails that only appear in older
+  history won't be picked up unless you supply `GITHUB_TOKEN` and walk
+  repos directly (not yet implemented)
+- The website link-follower is single-hop with same-origin sub-page
+  expansion; JavaScript-rendered SPAs (Next.js client-rendered, Notion
+  exports, etc.) return mostly empty bodies because there is no headless
+  browser in the pipeline
+- `@users.noreply.github.com` addresses are filtered out of the direct
+  identifier extractor since they are the privacy-preserving default
+  rather than a leak
