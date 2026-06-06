@@ -21,6 +21,8 @@ type ParsedChunk = {
   findings: Finding[];
 };
 
+const URL_RE = /https?:\/\/\S+/g;
+
 /**
  * The LLM stage. This mirrors step (1) of the paper's attack — "extract
  * identity-relevant features" — but points it at a consenting subject and
@@ -478,10 +480,11 @@ ${SCHEMA_HINT}`;
   const knownProofUrls = new Set(platformProfiles.map((p) => p.profileUrl));
   for (const f of parsed.findings ?? []) {
     for (const e of f.evidence ?? []) {
-      if (typeof e?.quote === "string") {
-        for (const m of e.quote.matchAll(/https?:\/\/\S+/g)) {
-          knownProofUrls.add(m[0].replace(/[),.;!?]+$/, ""));
-        }
+      const quote = e?.quote;
+      if (typeof quote !== "string") continue;
+      URL_RE.lastIndex = 0;
+      for (const m of quote.matchAll(URL_RE)) {
+        knownProofUrls.add(m[0].replace(/[),.;!?]+$/, ""));
       }
     }
   }
@@ -492,13 +495,22 @@ ${SCHEMA_HINT}`;
     }
   }
 
-  const span =
-    allItems.length > 0
-      ? {
-          firstUtc: Math.min(...allItems.map((i) => i.createdUtc)),
-          lastUtc: Math.max(...allItems.map((i) => i.createdUtc)),
-        }
-      : undefined;
+  let span:
+    | {
+        firstUtc: number;
+        lastUtc: number;
+      }
+    | undefined;
+  if (allItems.length > 0) {
+    let firstUtc = allItems[0].createdUtc;
+    let lastUtc = allItems[0].createdUtc;
+    for (let i = 1; i < allItems.length; i += 1) {
+      const createdUtc = allItems[i].createdUtc;
+      if (createdUtc < firstUtc) firstUtc = createdUtc;
+      if (createdUtc > lastUtc) lastUtc = createdUtc;
+    }
+    span = { firstUtc, lastUtc };
+  }
 
   // Deterministic identifier extraction. Runs over every item body plus the
   // model's evidence quotes, so anything regex-detectable lands in the

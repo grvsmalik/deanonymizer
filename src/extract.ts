@@ -117,8 +117,9 @@ export function extractSocialHandles(text: string): SocialHandle[] {
   const seen = new Set<string>();
   const out: SocialHandle[] = [];
   for (const { platform, pattern, reject } of SOCIAL_PATTERNS) {
-    const re = new RegExp(pattern.source, pattern.flags);
-    for (const m of text.matchAll(re)) {
+    // `matchAll` advances lastIndex on global regexes, so reset before reuse.
+    pattern.lastIndex = 0;
+    for (const m of text.matchAll(pattern)) {
       // For mastodon the user is in m[2], otherwise m[1].
       const handle = platform === "mastodon" ? `${m[2]}@${m[1]}` : m[1];
       const baseHandle = platform === "mastodon" ? m[2] : m[1];
