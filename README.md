@@ -1,20 +1,20 @@
 # deanonymizer
 
-so here's the thing: people leak a *surprising* amount of themselves online, one harmless little crumb at a time. a timezone here. a "back when I worked at $COMPANY" there. the same weird username on four different sites. none of it looks like much on its own. but stack the crumbs up and cross-reference them and suddenly you can point at a person.
+people leak a surprising amount of themselves online, one harmless crumb at a time. a timezone here. a "back when I worked at $COMPANY" there. the same username on four different sites. none of it looks like much on its own. but stack the crumbs up and cross-reference them, and suddenly you can point at a person.
 
-deanonymizer is a command-line tool that measures how big that pile of crumbs is for a given handle. you point it at public stuff — Reddit, Hacker News, GitHub, Stack Overflow, and now whatever website those profiles link to — and it pulls the weak signals together, scores how confidently they could be linked back to a real identity, and hands you a report that says, basically, *"here's what you're accidentally telling the internet, and here's where you said it."*
+deanonymizer is a command-line tool that measures how big that pile of crumbs is for a given handle. you point it at public sources — Reddit, Hacker News, GitHub, Stack Overflow, and now whatever website those profiles link to — and it pulls the weak signals together, scores how confidently they could be linked back to a real identity, and produces a report that says, in effect, *"here's what you're accidentally telling the internet, and here's where you said it."*
 
-it's a defensive tool. the point is to run it on yourself (or someone who asked you to), see the scary parts, and go fix them before someone less friendly does the same exercise. it is not a magic identity oracle and it will tell you so, repeatedly, in the limitations section, because I'd rather you trust it than be impressed by it.
+it's a defensive tool. the idea is to run it on yourself (or someone who's asked you to), see the exposed parts, and fix them before someone less friendly runs the same exercise. it is not an identity oracle, and it'll tell you so — repeatedly, in the limitations section — because I'd rather you trust it than be impressed by it.
 
-I built this because I got curious about that "crumbs add up" idea and wanted to actually *measure* it instead of just nodding along at it. turns out the answer is "yeah, kind of a lot." :3
+I built this because I got curious about the "crumbs add up" idea and wanted to actually measure it instead of just nodding along. turns out the answer is "yeah, kind of a lot."
 
 ## research basis
 
-this isn't a vibes-only project — the inference setting it leans on is laid out here:
+the inference setting it leans on is laid out here:
 
 - [arXiv:2602.16800](https://arxiv.org/abs/2602.16800)
 
-the one-line version of the premise: a disclosure that looks totally non-identifying on its own can become identifying once you fuse it across posts and across platforms. low entropy alone, high entropy together. that's the whole game.
+the one-line version of the premise: a disclosure that looks non-identifying on its own can become identifying once you fuse it across posts and across platforms. low entropy alone, high entropy together. that's the whole idea.
 
 ## what it actually produces
 
@@ -34,7 +34,7 @@ worth being clear about who the imagined attacker is, because it shapes everythi
 - **what they're doing with it:** probabilistic entity linkage — composing a bunch of small features and asking "do these all point at the same person?"
 - **what you're trying to win:** shrink your attributable identity surface. give the passive observer less to work with.
 
-so it's a passive adversary, working only from public traces, doing statistics. no hacking-into-things. the boundary exists because that's the realistic threat for most people, and honestly it's the uncomfortable one — you don't need to be breached to be deanonymized, you just need to have *posted*.
+so it's a passive adversary, working only from public traces, doing statistics — no breaking into anything. the boundary exists because that's the realistic threat for most people, and it's the uncomfortable one: you don't need to be breached to be deanonymized, you just need to have posted.
 
 ## how a run actually goes
 
@@ -46,7 +46,7 @@ mental model first, bullets second. when you kick off an audit, here's the journ
 - Hacker News stuff comes from the [HN Algolia Search API](https://hn.algolia.com/api)
 - GitHub gives up profile fields + public events (commits, issues, PRs, review comments) via the [GitHub REST API](https://docs.github.com/en/rest). commit author name and email tucked inside `PushEvent` payloads get folded in inline — those are a juicy source. dropping a `GITHUB_TOKEN` in the env raises your rate limit.
 - Stack Overflow hands over answers, questions, comments, and profile fields via the [Stack Exchange API v2.3](https://api.stackexchange.com)
-- and then the fun one: if a GitHub or Stack Overflow profile links out to someone's personal website, a shallow link-follower goes and *reads it*. it grabs the root page, then up to 5 same-origin sub-pages, picking the ones that smell like identity — `/about`, `/cv`, `/resume`, `/contact`, `/bio`, `/me`, `/portfolio`, that whole genre. it carefully preserves `mailto:` and `http(s)://` href values *before* stripping the HTML, so a contact email hiding behind a link doesn't get vaporized on the way through. (for reasons that seemed smart and turned out to be correct: people hide their email in an `<a href>` constantly.)
+- and the interesting one: if a GitHub or Stack Overflow profile links out to a personal website, a shallow link-follower goes and reads it. it grabs the root page, then up to 5 same-origin sub-pages, prioritizing the ones that look identity-shaped — `/about`, `/cv`, `/resume`, `/contact`, `/bio`, `/me`, `/portfolio`, and so on. it preserves `mailto:` and `http(s)://` href values *before* stripping the HTML, so a contact email hiding behind a link survives the pass. this matters more than it sounds: people put their email in an `<a href>` constantly.
 
 **2. it normalizes the mess.**
 
@@ -55,14 +55,14 @@ every source returns its own weird record shape, so everything gets mapped into 
 **3. it pulls out features — two passes, running side by side.**
 
 - the **LLM pass** reads the corpus and looks for the soft stuff: location, affiliations, daily-routine timing, self-disclosed demographics, cross-platform handles, external URLs, and stylometric tells. crucially, every claim it makes gets *bound to evidence* — a quote and a permalink — so nothing floats free. if it says you live somewhere, it has to show you where you said it.
-- the **deterministic regex pass** runs in parallel and completely ignores the model. it goes after the hard, unambiguous leaks: emails (and yes, it un-mangles the cute `[at]`/`[dot]` obfuscation people use), plus cross-platform social handles for LinkedIn, Twitter/X, GitHub, YouTube, Instagram, Bluesky, Reddit, Hacker News, Telegram, GitLab, Stack Overflow, and Mastodon, scraped out of URL patterns in the text. it filters out false-positive junk like `twitter.com/home`, and it excludes the account you're actually auditing so it doesn't triumphantly "discover" the thing you typed in.
+- the **deterministic regex pass** runs in parallel and ignores the model entirely. it goes after the hard, unambiguous leaks: emails (and it un-mangles the `[at]`/`[dot]` obfuscation people use), plus cross-platform social handles for LinkedIn, Twitter/X, GitHub, YouTube, Instagram, Bluesky, Reddit, Hacker News, Telegram, GitLab, Stack Overflow, and Mastodon, pulled out of URL patterns in the text. it filters out false positives like `twitter.com/home`, and it excludes the account you're actually auditing so it doesn't "discover" the handle you just typed in.
 
 **4. it synthesizes the risk.**
 
 - findings get confidence-calibrated into low / medium / high
 - there's an explicit "this is the exact user" section plus the set of public proof URLs
-- the **direct-identifier block** (emails + discovered handles) gets rendered *before* the LLM findings on purpose — concrete leaks should always show up front and center, no matter how the model decided to phrase its own summary. hard facts don't get buried under prose.
-- and each finding comes with its own remediation suggestion, so the report isn't just "here's the bad news," it's "here's the bad news and what to do about it."
+- the **direct-identifier block** (emails + discovered handles) is rendered *before* the LLM findings on purpose — concrete leaks should always show up front, no matter how the model chose to phrase its own summary. hard facts don't get buried under prose.
+- each finding comes with its own remediation suggestion, so the report isn't just "here's the bad news," it's "here's the bad news and what to do about it."
 
 ## what you get out the other end
 
@@ -79,11 +79,11 @@ it's a node project, so:
 npm install
 ```
 
-that's genuinely it. now you need a brain for it to think with.
+that's it for the tool itself. now it needs a model to think with.
 
 ## picking an LLM backend
 
-the analysis stage needs a model, and there are three interchangeable backends. it auto-picks one based on your environment, or you can boss it around with `--provider`. here's the honest rundown of who each one is for.
+the analysis stage needs a model, and there are three interchangeable backends. it auto-picks one based on your environment, or you can choose explicitly with `--provider`. here's the rundown of who each one is for.
 
 **Anthropic (native — the default if this is the only key you've set)**
 
@@ -93,7 +93,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # optional: export ANTHROPIC_MODEL=claude-sonnet-4-6  # slower, higher quality
 ```
 
-this is the path I reach for. it gets native prompt caching, so repeat runs are cheaper and snappier. defaults to the fast `claude-haiku-4-5`; bump it to `claude-sonnet-4-6` when you want the model to think harder and you don't mind waiting a bit.
+this is the path I reach for. it gets native prompt caching, so repeat runs are cheaper and faster. defaults to the fast `claude-haiku-4-5`; bump it to `claude-sonnet-4-6` when you want the model to think harder and don't mind waiting a bit.
 
 **any OpenAI-compatible endpoint** — OpenAI, Google Gemini, Ollama, Groq, Together, basically anyone who speaks Chat Completions. just point `OPENAI_BASE_URL` at their surface:
 
@@ -112,7 +112,7 @@ export OPENAI_BASE_URL=http://localhost:11434/v1
 export OPENAI_MODEL=llama3
 ```
 
-this is the "use whatever you've already got" path. mixing providers is easy; pick based on cost, speed, or whatever model you trust. the Ollama variant is great if you'd rather not send someone's data off your machine at all — it runs fully local, no key, slower but yours.
+this is the "use whatever you've already got" path. switching providers is easy; pick based on cost, speed, or whichever model you trust. the Ollama variant is useful if you'd rather not send someone's data off your machine at all — it runs fully local, no key, slower but yours.
 
 **Claude Code CLI (no API key at all)** — this one routes the analysis through your existing [Claude Code](https://claude.com/claude-code) session by shelling out to `claude -p`. so if you're already logged into Claude Code, you don't need an `ANTHROPIC_API_KEY` floating around in your env. you have to ask for it explicitly:
 
@@ -123,7 +123,7 @@ export CLAUDE_CODE_MODEL=claude-sonnet-4-6
 export CLAUDE_CODE_BIN=/path/to/claude
 ```
 
-the tradeoffs, stated plainly so you're not surprised: no prompt caching, no `max_tokens` control, and slower per-call startup because the CLI has to cold-start every time. that's exactly why it's opt-in and never auto-detected — it'd be a bad default but it's a genuinely nice escape hatch when you don't want to manage a key. it also doesn't have a `response_format: json_object` equivalent, so the built-in JSON-repair fallback quietly cleans up after it.
+the tradeoffs, stated plainly: no prompt caching, no `max_tokens` control, and slower per-call startup because the CLI has to cold-start every time. that's why it's opt-in and never auto-detected — it'd make a poor default, but it's a useful escape hatch when you don't want to manage a key. it also has no `response_format: json_object` equivalent, so the built-in JSON-repair fallback cleans up after it.
 
 **how it decides, when you don't tell it:**
 
@@ -148,7 +148,7 @@ npm run audit -- --github my_gh_handle
 npm run audit -- --so 1234567
 
 # all four platforms at once — cross-platform handle correlation is the
-# single strongest signal the analyzer can flag, so this is where it gets spicy
+# single strongest signal the analyzer can flag
 npm run audit -- my_reddit_handle --hn my_hn_handle --github my_gh_handle --so 1234567
 
 # audit through the Claude Code CLI (no API key needed)
@@ -170,7 +170,7 @@ npm run audit -- my_reddit_handle --base-url http://localhost:11434/v1 --model l
 npm run audit -- my_reddit_handle --provider openai --model gpt-4o-mini
 ```
 
-the all-four-platforms one is the run that tends to make people quietly close their laptop and go scrub their accounts. same username everywhere is a hell of a drug.
+the all-four-platforms run is the one that tends to surprise people the most. reusing the same username everywhere is the easiest thread to pull on.
 
 ## CLI options
 
@@ -191,7 +191,7 @@ the all-four-platforms one is the run that tends to make people quietly close th
 | -o, --out <file> | stdout | write output to a file |
 | --i-am-authorized | false | skip the interactive authorization prompt for scripted runs |
 
-(yes, there's an authorization prompt. run this on people who asked you to, or on yourself. don't be weird.)
+(yes, there's an authorization prompt by default. run this on yourself, or on someone who's asked you to.)
 
 ## getting consistent results
 
@@ -210,20 +210,20 @@ npm run build
 
 ## continuous integration
 
-there's a GitHub Actions workflow at `.github/workflows/ci.yml` that runs `npm run lint`, `npm run format:check`, `tsc --noEmit`, `npm test`, and `npm run build` on every push and PR against `main`, across a Node 20 / 22 / 24 matrix. so if it's green, it at least compiles and lints on three node versions, which is more than I can say for most of my 2am ideas.
+there's a GitHub Actions workflow at `.github/workflows/ci.yml` that runs `npm run lint`, `npm run format:check`, `tsc --noEmit`, `npm test`, and `npm run build` on every push and PR against `main`, across a Node 20 / 22 / 24 matrix. so if it's green, it compiles, lints, and passes tests on three node versions.
 
 ## limitations (please read this part)
 
-this is the section I care about most, so I'm going to be blunt with you.
+this is the section I care about most, so I'll be blunt.
 
-this is a probability machine, not a crystal ball. *please do not take its output as proof of identity.* it is built to surface risk, not to convict anyone.
+this is a probability machine, not a crystal ball. *please do not take its output as proof of identity.* it's built to surface risk, not to convict anyone.
 
 - **findings are probabilistic.** a "high confidence" finding means the evidence stacks up, not that it's a fact. treat it accordingly.
-- **garbage in, garbage out.** recall is capped by how complete the source data is and by truncation. if the crumbs aren't public, it can't see them, and it'll happily under-report.
-- **stylometry is fickle.** how separable someone's writing style is depends heavily on the population and the domain. sometimes it's a fingerprint, sometimes it's nothing.
-- **confidence depends on evidence density.** thin, low-quality artifacts → shaky calibration. it knows less when there's less to know.
-- **GitHub's public events feed only goes back ~300 events / ~90 days.** so commit author emails that only live in older history just won't get caught — unless you supply a `GITHUB_TOKEN` and walk the repos directly, which is *not yet implemented*. (it's on the someday-list.)
-- **the website link-follower is single-hop** with same-origin sub-page expansion, and there's no headless browser in the pipeline. so JavaScript-rendered SPAs — client-rendered Next.js, Notion exports, that kind of thing — mostly come back as empty bodies. it reads HTML, not whatever your framework hydrates after the fact. unfortunately.
-- **`@users.noreply.github.com` addresses are filtered out** of the direct-identifier extractor on purpose. those are GitHub's privacy-preserving default, not a leak — flagging them would be crying wolf.
+- **garbage in, garbage out.** recall is capped by how complete the source data is and by truncation. if the crumbs aren't public, it can't see them, and it'll under-report.
+- **stylometry is unreliable.** how separable someone's writing style is depends heavily on the population and the domain. sometimes it's a fingerprint, sometimes it's nothing.
+- **confidence depends on evidence density.** thin, low-quality artifacts mean shaky calibration. it knows less when there's less to know.
+- **GitHub's public events feed only goes back ~300 events / ~90 days.** commit author emails that only live in older history won't get caught — unless you supply a `GITHUB_TOKEN` and walk the repos directly, which is *not yet implemented*.
+- **the website link-follower is single-hop** with same-origin sub-page expansion, and there's no headless browser in the pipeline. so JavaScript-rendered SPAs — client-rendered Next.js, Notion exports, and the like — mostly come back as empty bodies. it reads HTML, not whatever your framework hydrates afterward.
+- **`@users.noreply.github.com` addresses are filtered out** of the direct-identifier extractor on purpose. those are GitHub's privacy-preserving default, not a leak — flagging them would be a false positive.
 
-if any of that makes you trust the tool *more* rather than less: good, that was the goal. a tool that's honest about where it's blind is one you can actually reason about.
+if any of that makes you trust the tool *more* rather than less, good — that was the goal. a tool that's honest about where it's blind is one you can actually reason about.
